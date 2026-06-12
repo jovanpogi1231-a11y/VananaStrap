@@ -53,24 +53,55 @@ namespace Bloxstrap
             {
                 if (Prop.ContainsKey(key))
                     App.Logger.WriteLine(LOG_IDENT, $"Deletion of '{key}' is pending");
-
                 Prop.Remove(key);
             }
             else
             {
-                if (Prop.ContainsKey(key))
-                {
-                    if (key == Prop[key].ToString())
-                        return;
+                if (Prop.ContainsKey(key) && key == Prop[key].ToString())
+                    return;
 
-                    App.Logger.WriteLine(LOG_IDENT, $"Changing of '{key}' from '{Prop[key]}' to '{value}' is pending");
-                }
-                else
-                {
-                    App.Logger.WriteLine(LOG_IDENT, $"Setting of '{key}' to '{value}' is pending");
-                }
-
+                App.Logger.WriteLine(LOG_IDENT, $"Setting of '{key}' to '{value}' is pending");
                 Prop[key] = value.ToString()!;
+            }
+
+            // Live push to running Roblox process
+            TryPushLive(key, value);
+        }
+
+        private static void TryPushLive(string key, object? value)
+        {
+            // Find Roblox PID
+            var procs = System.Diagnostics.Process.GetProcessesByName("RobloxPlayerBeta");
+            if (procs.Length == 0) return;
+
+            uint pid = (uint)procs[0].Id;
+
+            if (NativeInjector.ConnectToProcess(pid) == 0) return;
+
+            if (value is null) return; // deletion — no live uninject support yet
+
+            string str = value.ToString()!;
+            string lower = str.ToLower();
+
+            // Detect type by flag name prefix convention
+            if (key.StartsWith("FFlag") || key.StartsWith("DFFlag"))
+            {
+                int b = (lower == "true" || lower == "1") ? 1 : 0;
+                NativeInjector.SetFlagBool(pid, key, b);
+            }
+            else if (key.StartsWith("FInt") || key.StartsWith("DFInt"))
+            {
+                if (int.TryParse(str, out int i))
+                    NativeInjector.SetFlagInt(pid, key, i);
+            }
+            else if (key.StartsWith("FFloat") || key.StartsWith("DFFloat"))
+            {
+                if (float.TryParse(str, out float f))
+                    NativeInjector.SetFlagFloat(pid, key, f);
+            }
+            else
+            {
+                NativeInjector.SetFlagString(pid, key, str);
             }
         }
 
